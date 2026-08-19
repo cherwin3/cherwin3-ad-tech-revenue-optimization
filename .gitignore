@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 .env
 venv/
 .venv/
@@ -6,3 +7,9 @@ __pycache__/
 .pytest_cache/
 node_modules/
 logs/*.log
+=======
+.env
+venv/
+__pycache__/
+*.pyc
+>>>>>>> decf7793b6653691dfc71006ae2743f1ba906d30
