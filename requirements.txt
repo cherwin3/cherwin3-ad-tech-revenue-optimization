@@ -1,0 +1,10 @@
+fastapi
+uvicorn
+pydantic
+redis
+kafka-python
+clickhouse-driver
+python-dotenv
+google-genai
+pytest
+httpx
