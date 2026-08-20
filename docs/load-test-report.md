@@ -1,700 +1,232 @@
- # AdStream Revenue Optimization API  
-# Load Testing and Performance Evaluation Report
+# AdStream Revenue Optimization Platform
+## Load and Performance Test Report
 
-## 1. Introduction
+**Tool:** Locust  
+**System under test:** FastAPI optimization service  
+**Prepared by:** Cherwin N  
+**Test date:** 20 August 2026  
+**Status:** Complete after inserting final Locust metrics
 
-The AdStream Revenue Optimization Platform is an AI-powered Ad Tech application designed to recommend suitable advertisement positions and formats based on user engagement behaviour. The system processes information such as scroll depth, time spent on the page, device type, and page type.
+> Important: Replace every `<ENTER ...>` field with the value shown in your Locust Statistics page. Do not submit invented numbers.
 
-The backend application is developed using FastAPI. Redis is used as a caching service to improve response time and reduce repeated processing. The optimization engine calculates advertisement placement recommendations, while the Gemini Large Language Model can generate contextual explanations for the recommendations.
+## 1. Executive Summary
 
-Because the platform may receive requests from many publisher websites and users simultaneously, it is important to evaluate its performance under load. Load testing helps determine whether the application can process multiple concurrent requests without producing excessive response delays or failures.
+This test evaluates whether the AdStream API remains stable and responsive when multiple virtual publisher clients access health and advertisement-placement endpoints concurrently. The workload represents routine availability checks and a higher proportion of optimization requests. The report measures throughput, response latency, percentile behaviour, failures and the operational effect of Redis and the Gemini integration.
 
-This report explains the load-testing environment, test scenarios, configuration, observed results, identified bottlenecks, and recommendations for improving the scalability and reliability of the AdStream API.
+The platform will be considered technically acceptable when it sustains the target user load, maintains the agreed failure-rate threshold and provides predictable p95 response time without exhausting application or dependency resources.
 
----
+## 2. Test Objectives
 
-## 2. Purpose of Load Testing
+- Confirm that `GET /health` remains available under concurrent traffic.
+- Measure `POST /optimize-placement` performance under realistic weighted load.
+- Calculate total throughput and endpoint-level requests per second.
+- Measure average, median, p95, p99 and maximum response times.
+- Identify HTTP, validation, timeout and dependency failures.
+- Observe whether caching reduces repeated request latency.
+- Establish a baseline for future releases and regression testing.
 
-The primary purpose of this load test is to measure the performance, stability, and reliability of the AdStream API when multiple simulated users access it simultaneously.
+## 3. Scope
 
-The load test was conducted to achieve the following objectives:
+### Included
 
-1. Determine whether the API can process multiple concurrent requests.
-2. Measure the response time of the health and optimization endpoints.
-3. Calculate the number of requests processed per second.
-4. Identify failed requests and API errors.
-5. Observe the behaviour of FastAPI and Redis during increased traffic.
-6. Identify performance bottlenecks in the optimization and LLM services.
-7. Verify that the API remains available throughout the test.
-8. Provide recommendations for improving production performance.
-9. Generate performance evidence for operational readiness.
-10. Understand the approximate traffic level that the current system can support.
+- FastAPI request routing and Pydantic validation.
+- Rule-based placement recommendation.
+- Redis lookup and response caching.
+- Gemini explanation when enabled and available.
+- Kafka event publication and ClickHouse integration configured by the application.
 
----
+### Excluded
 
-## 3. Scope of Testing
+- Public internet/CDN performance.
+- Browser rendering and frontend performance.
+- Production-scale multi-region failover.
+- Billing validation for external LLM usage.
+- Long-duration soak testing unless separately executed.
 
-The load test focuses on the backend API of the AdStream Revenue Optimization Platform. The test simulates virtual users who repeatedly send requests to the application.
+## 4. Test Environment
 
-The following components were included in the test:
-
-- FastAPI backend application.
-- Uvicorn application server.
-- Health-check endpoint.
-- Advertisement-placement optimization endpoint.
-- Pydantic request validation.
-- Rule-based optimization engine.
-- Redis caching service.
-- Gemini explanation service, when available.
-- Local machine network and system resources.
-
-The following components were not fully included in the current local test:
-
-- Apache Kafka event streaming.
-- ClickHouse analytical database.
-- React publisher dashboard.
-- Production cloud infrastructure.
-- Real publisher website traffic.
-- Distributed Redis configuration.
-- OpenTelemetry and Grafana monitoring.
-- Production load balancer.
-
-These components are part of the proposed enterprise architecture and can be included in future performance-testing stages.
-
----
-
-## 4. Testing Tool
-
-Locust was used to perform the load test.
-
-Locust is an open-source performance-testing tool developed using Python. It allows developers to define user behaviour in a Python file and simulate multiple users sending HTTP requests to an application.
-
-The Locust dashboard provides real-time performance information, including:
-
-- Current number of simulated users.
-- Total number of requests.
-- Number of requests per second.
-- Average response time.
-- Minimum response time.
-- Maximum response time.
-- Response-time percentiles.
-- Number and percentage of failed requests.
-- Performance charts.
-- Failure information.
-
-Locust was selected because it is easy to integrate with Python and FastAPI applications. The virtual-user behaviour can be defined in a locustfile.py file, making the test repeatable and maintainable.
-
----
-
-## 5. Test Environment
-[8/20/26 12:19 AM] Cherwin N: The load test was performed in a local development environment.
-
-| Component | Technology or configuration |
+| Item | Test value |
 |---|---|
-| Application | AdStream Revenue Optimization API |
-| Programming language | Python |
-| Backend framework | FastAPI |
-| Application server | Uvicorn |
-| Data validation | Pydantic |
-| Caching service | Redis |
-| Redis execution environment | Docker container |
-| LLM service | Google Gemini API |
-| Load-testing tool | Locust |
-| API address | http://127.0.0.1:8000 |
-| API documentation | http://127.0.0.1:8000/docs |
-| Locust dashboard | http://localhost:8089 |
-| Testing environment | Local development machine |
-| Source-code management | Git and GitHub |
+| Operating system | Ubuntu Linux |
+| API framework | FastAPI with Uvicorn |
+| Runtime | Python virtual environment |
+| Infrastructure | Docker Compose |
+| Cache | Redis 7 Alpine |
+| Streaming | Apache Kafka 3.8.1 |
+| Analytics | ClickHouse Server |
+| Load generator | Locust |
+| API host | `http://localhost:8000` |
+| Locust UI | `http://localhost:8089` |
+| Hardware | `<ENTER CPU, RAM AND DEVICE>` |
+| Git commit tested | `<ENTER COMMIT HASH>` |
 
-### Test machine details
+Because the load generator and API may run on the same machine, resource competition can affect the result. These values are therefore a development baseline rather than a guarantee of production capacity.
 
-- Operating system: [ENTER OPERATING SYSTEM]
-- Processor: [ENTER PROCESSOR IF KNOWN]
-- Installed memory: [ENTER RAM IF KNOWN]
-- Python version: [ENTER PYTHON VERSION]
-- Redis version: [ENTER VERSION IF KNOWN]
-- Locust version: [ENTER VERSION IF KNOWN]
+## 5. Workload Model
 
-The results in this report represent the performance of the application on the local test machine. Production performance may be different because of server capacity, network speed, worker configuration, database capacity, and cloud infrastructure.
+The Locust user waits between one and three seconds between activities. Health checks have weight 1 and optimization requests have weight 3. This produces approximately 25% health traffic and 75% optimization traffic over a sufficiently long run.
 
----
+| Scenario | Method | Endpoint | Weight | Expected status |
+|---|---|---|---:|---:|
+| Service health | GET | `/health` | 1 | 200 |
+| Placement optimization | POST | `/optimize-placement` | 3 | 200 |
 
-## 6. Application Architecture Under Test
+The optimization payload uses valid values for user, page, scroll depth, engagement time, device and page type. Additional future tests should randomize these fields to evaluate cache-hit and cache-miss behaviour separately.
 
-The API receives user-engagement data and processes it through several application components.
+## 6. Test Configuration
 
-The simplified request flow is:
-
-Virtual Locust User
-        ↓
-FastAPI Endpoint
-        ↓
-Pydantic Input Validation
-        ↓
-Redis Cache Check
-        ↓
-Advertisement Optimization Engine
-        ↓
-Gemini Explanation Service
-        ↓
-Redis Result Storage
-        ↓
-JSON API Response
-
-When a request reaches the optimization endpoint, FastAPI receives the request and Pydantic validates its data. The application checks Redis to determine whether a previously generated result is available.
-
-If a cached result is available, the system can return it without repeating all processing. If no cached result exists, the optimization engine calculates a new recommendation. Gemini may then generate an explanation before the final response is returned.
-
-This architecture supports fast request processing, reusable cached results, and understandable AI-generated recommendations.
-
----
-
-## 7. Endpoints Tested
-
-### 7.1 Health-check endpoint
-
-- HTTP method: GET
-- Endpoint: /health
-- Complete URL: http://127.0.0.1:8000/health
-- Purpose: Verify the availability of FastAPI and the Redis connection.
-
-Example response:
-
-{
-  "api": "healthy",
-  "redis": "connected"
-}
-
-The health endpoint is expected to respond quickly because it performs a limited service-status check.
-
-### 7.2 Advertisement optimization endpoint
-
-- HTTP method: POST
-- Endpoint: /optimize-placement
-- Complete URL: http://127.0.0.1:8000/optimize-placement
-- Purpose: Generate an optimized advertisement-placement recommendation.
-
-The following sample data was used during the load test:
-
-{
-  "user_id": "load-test-user",
-  "page_id": "article-101",
-  "scroll_depth": 65,
-  "time_on_page": 45,
-  "device_type": "desktop",
-  "page_type": "article"
-}
-
-The optimization endpoint returns information similar to the following:
-
-{
-  "recommended_position": "middle_content",
-  "ad_format": "native",
-  "predicted_viewability": 0.94,
-  "estimated_rpm": 5.76,
-  "reason": "The user has demonstrated high engagement with the page.",
-  "source": "optimization_engine",
-  "llm_used": false
-}
-
-This endpoint performs more work than the health endpoint because it may use input validation, Redis, optimization logic, and the Gemini service.
-
----
-
-## 8. Locust Test Script
-
-The following Locust script was used to simulate user behaviour:
-[8/20/26 12:19 AM] Cherwin N: from locust import HttpUser, task, between
-
-
-class AdStreamUser(HttpUser):
-    wait_time = between(1, 3)
-
-    @task(1)
-    def check_health(self):
-        self.client.get(
-            "/health",
-            name="GET /health"
-        )
-
-    @task(3)
-    def optimize_placement(self):
-        payload = {
-            "user_id": "load-test-user",
-            "page_id": "article-101",
-            "scroll_depth": 65,
-            "time_on_page": 45,
-            "device_type": "desktop",
-            "page_type": "article"
-        }
-
-        self.client.post(
-            "/optimize-placement",
-            json=payload,
-            name="POST /optimize-placement"
-        )
-
-The optimization task has a weight of three, while the health-check task has a weight of one. Therefore, a virtual user is more likely to call the optimization endpoint than the health endpoint.
-
-A waiting period of one to three seconds is included between tasks. This creates a more realistic request pattern and prevents each virtual user from sending requests without any delay.
-
----
-
-## 9. Test Preparation
-
-Before conducting the test, the following preparation steps were completed.
-
-### 9.1 Starting Redis
-
-The Redis Docker container was started using:
-
-sudo docker start redis-adstream
-
-The container status was checked using:
-
-sudo docker ps
-
-The Redis connection was verified using:
-
-sudo docker exec -it redis-adstream redis-cli ping
-
-The expected response was:
-
-PONG
-
-### 9.2 Starting the FastAPI application
-
-The application was started using:
-
-uvicorn main:app --reload
-
-The application health was verified by opening:
-
-http://127.0.0.1:8000/health
-
-### 9.3 Starting Locust
-
-Locust was started using:
-
-locust -f load-tests/locustfile.py --host http://127.0.0.1:8000
-
-The Locust dashboard was opened using:
-
-http://localhost:8089
-
-The number of virtual users and the ramp-up rate were entered into the dashboard before starting the test.
-
----
-
-## 10. Test Configuration
-
-The following configuration was used for the completed load test:
-
-| Configuration | Value |
+| Parameter | Value |
 |---|---:|
-| Number of concurrent users | [ENTER USERS] |
-| User ramp-up rate | [ENTER RATE] users/second |
-| Test duration | [ENTER DURATION] |
-| Wait time between requests | 1–3 seconds |
-| Target host | http://127.0.0.1:8000 |
-| Primary endpoint | POST /optimize-placement |
-| Secondary endpoint | GET /health |
-| Testing environment | Local machine |
+| Concurrent users | `<ENTER, for example 100>` |
+| Spawn rate | `<ENTER, for example 10 users/second>` |
+| Duration | `<ENTER, for example 5 minutes>` |
+| Wait time | 1–3 seconds |
+| Target host | `http://localhost:8000` |
+| LLM mode | `<ENABLED / FALLBACK / DISABLED>` |
+| Cache state | `<WARM / COLD / MIXED>` |
 
-### Meaning of concurrent users
+## 7. Execution Procedure
 
-The number of concurrent users represents the number of virtual users created by Locust. These are not real people. Each virtual user automatically sends requests according to the behaviour defined in locustfile.py.
+Start infrastructure and API:
 
-### Meaning of ramp-up rate
+```bash
+sudo docker compose up -d
+uvicorn backend.app.main:app --host 0.0.0.0 --port 8000
+```
 
-The ramp-up rate defines how quickly Locust starts virtual users.
+Validate health:
 
-For example, a value of five means that Locust starts approximately five additional virtual users every second until the configured total number of users is reached.
+```bash
+curl http://localhost:8000/health
+```
 
----
+Start Locust:
 
-## 11. Test Scenarios
+```bash
+locust -f locustfile.py --host http://localhost:8000
+```
 
-### Scenario 1: Health-check testing
+Open `http://localhost:8089`, enter the user and spawn values, start the test and allow the configured duration to complete. Export CSV data or capture the Statistics, Charts and Failures screens.
 
-This scenario verifies whether the application remains available during the load test. Virtual users repeatedly call the /health endpoint.
+## 8. Acceptance Criteria
 
-The expected result is:
+The following are recommended development targets and may be adjusted by the organization:
 
-- HTTP status code 200.
-- API status reported as healthy.
-- Redis connection reported as connected.
-- Low response time.
-- No failed requests.
-
-### Scenario 2: Optimization-endpoint testing
-
-This scenario evaluates the performance of the main application functionality. Virtual users submit engagement data to /optimize-placement.
-
-The expected result is:
-
-- HTTP status code 200.
-- Valid advertisement-position recommendation.
-- Valid advertisement-format recommendation.
-- Viewability and RPM values returned.
-- Explanation included in the response.
-- No validation or server errors.
-
-### Scenario 3: Concurrent mixed traffic
-
-This scenario combines health-check and optimization requests. It represents a situation where users access the primary application while monitoring software also checks the system's availability.
-
-The expected result is that both endpoints remain available without a significant number of failures.
-
----
-[8/20/26 12:19 AM] Cherwin N: ## 12. Overall Test Results
-
-Enter the values displayed in the Aggregated row of the Locust Statistics page.
-
-| Performance metric | Actual result |
+| Metric | Target |
 |---|---:|
-| Concurrent users | [ENTER RESULT] |
-| Total requests | [ENTER RESULT] |
-| Total failed requests | [ENTER RESULT] |
-| Failure percentage | [ENTER RESULT]% |
-| Requests per second | [ENTER RESULT] requests/second |
-| Failures per second | [ENTER RESULT] |
-| Average response time | [ENTER RESULT] ms |
-| Minimum response time | [ENTER RESULT] ms |
-| Maximum response time | [ENTER RESULT] ms |
-| Median response time | [ENTER RESULT] ms |
-| 95th-percentile response time | [ENTER RESULT] ms |
-| 99th-percentile response time | [ENTER RESULT] ms |
-| Total test duration | [ENTER RESULT] |
+| Health endpoint success rate | At least 99.9% |
+| Overall failure rate | Less than 1% |
+| Cached optimization p95 | Less than 500 ms |
+| Health endpoint p95 | Less than 200 ms |
+| API availability during target load | No outage |
+| Unhandled HTTP 5xx errors | 0 preferred |
 
----
+LLM-enabled uncached traffic should have a separate latency target because external model calls are slower and network-dependent.
 
-## 13. Endpoint-Level Results
+## 9. Test Results
 
-Enter the separate values shown for each endpoint in Locust.
+Copy the exact values from Locust:
 
-| Endpoint | Requests | Failures | Average time | Minimum time | Maximum time | Requests/second |
-|---|---:|---:|---:|---:|---:|---:|
-| GET /health | [VALUE] | [VALUE] | [VALUE] ms | [VALUE] ms | [VALUE] ms | [VALUE] |
-| POST /optimize-placement | [VALUE] | [VALUE] | [VALUE] ms | [VALUE] ms | [VALUE] ms | [VALUE] |
-| Aggregated | [VALUE] | [VALUE] | [VALUE] ms | [VALUE] ms | [VALUE] ms | [VALUE] |
+| Request | Count | Failures | Median ms | Average ms | p95 ms | p99 ms | Max ms | RPS |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|
+| `GET /health` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` |
+| `POST /optimize-placement` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` |
+| **Aggregated** | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` | `<ENTER>` |
 
----
+### Failure-rate calculation
 
-## 14. Result Analysis
+```text
+Failure Rate (%) = (Number of Failed Requests / Total Requests) × 100
+```
 
-The AdStream API was tested with [ENTER USERS] concurrent virtual users and a ramp-up rate of [ENTER RATE] users per second. The test was allowed to run for approximately [ENTER DURATION].
+```text
+Failure Rate = (<FAILED> / <TOTAL>) × 100 = <ENTER RESULT>%
+```
 
-During the test, the application processed a total of [ENTER REQUESTS] requests. The overall throughput was [ENTER RPS] requests per second.
+## 10. Result Analysis
 
-The average response time was [ENTER AVERAGE] milliseconds, while the maximum recorded response time was [ENTER MAXIMUM] milliseconds. The failure percentage was [ENTER FAILURE]%.
+### Throughput
 
-### If your failure percentage is 0%
+The platform processed `<ENTER TOTAL REQUESTS>` requests at an aggregate rate of `<ENTER RPS>` requests per second. State whether throughput remained stable after all virtual users were active and whether it declined as latency increased.
 
-Use this paragraph:
+### Response latency
 
-The application completed the test without any failed requests. A failure rate of 0% indicates that the API remained stable and available for the selected user count and test duration. Therefore, the application successfully supported the simulated workload in the current local environment.
+The aggregated average response time was `<ENTER>` ms and p95 was `<ENTER>` ms. The p95 metric means that 95% of completed requests responded within that time. Compare `/health` with `/optimize-placement`; optimization is expected to be slower because it performs validation, caching, decision logic and optional integrations.
 
-### If your failure percentage is greater than 0%
+### Reliability
 
-Use this paragraph:
+The test recorded `<ENTER FAILED REQUESTS>` failures, producing a failure rate of `<ENTER>%`. List each failure from Locust's Failures tab, including status code, error message, count and likely cause. If failures are zero, state that no request-level failures were observed during this test—not that failures are impossible.
 
-Some requests failed during the load test. The failures indicate that one or more application components experienced difficulty under the selected traffic level. The failure information must be examined to determine whether the problem was caused by request timeouts, Redis connectivity, Gemini service limitations, invalid responses, or insufficient machine resources.
+### Cache behaviour
 
----
+Repeated payloads should create Redis cache hits and lower response time. For a stronger result, compare a cold-cache run immediately after `FLUSHDB` with a warm-cache run using the same payload. `FLUSHDB` must only be performed in a disposable test environment.
 
-## 15. Comparison of Endpoint Performance
+### LLM behaviour
 
-The /health endpoint is expected to have a lower response time because it performs only a basic service-status check. It does not execute the complete advertisement optimization process.
+Gemini can increase uncached response latency. The deterministic optimization and fallback explanation should keep the endpoint functional when Gemini is unavailable. Report the ratio of `llm_used: true` and fallback responses if captured.
 
-The /optimize-placement endpoint is expected to take more time because it performs several operations:
+## 11. Observed Bottlenecks
 
-1. Receives and validates engagement information.
-2. Creates or retrieves a Redis cache key.
-3. Checks Redis for an existing result.
-4. Runs the advertisement optimization logic when required.
-5. Calculates predicted viewability and estimated RPM.
-6. Calls Gemini when an AI-generated explanation is required.
-7. Stores the completed response in Redis.
-8. Returns the final JSON response.
+Complete only those supported by evidence:
 
-If the optimization endpoint shows a significantly higher response time, the Gemini API call and Redis operations should be examined first.
+- External LLM response time may dominate uncached optimization latency.
+- A single Uvicorn worker can limit CPU-bound or blocking request concurrency.
+- Low Redis cache-hit ratio increases repeated computation and external calls.
+- Synchronous Kafka/ClickHouse operations can extend the critical request path.
+- Running Locust and the API on the same machine can create CPU contention.
+- Container memory pressure can produce latency spikes or restarts.
 
----
+**Evidence observed in this run:** `<ENTER OBSERVATION FROM CHARTS, LOGS OR METRICS>`
 
-## 16. Response-Time Evaluation
+## 12. Performance Improvements
 
-Response time represents how long the server takes to process a request and return a response.
+Recommended improvements are:
 
-The following general classification was used:
+1. Cache stable recommendations using normalized, versioned keys and an appropriate TTL.
+2. Apply strict Gemini connect/read timeouts and retain deterministic fallback output.
+3. Move analytics persistence out of the synchronous request path through Kafka consumers.
+4. Use multiple production workers and scale horizontally behind a load balancer.
+5. Reuse Redis, Kafka and HTTP connections rather than creating them per request.
+6. Add rate limiting, backpressure and bounded retry policies.
+7. Monitor p95/p99 latency, Redis hit ratio, Kafka lag, errors, CPU and memory.
+8. Separate the load generator from the system under test for production-scale validation.
 
-| Response time | Evaluation |
-|---|---|
-| Below 200 ms | Excellent for a local API request |
-| 200–500 ms | Acceptable |
-| 500–1000 ms | Requires observation |
-| Above 1000 ms | Slow and requires optimization |
-| Several seconds | Critical for real-time advertisement delivery |
+### Retest comparison
 
-For Ad Tech applications, low response time is especially important because advertisements must be selected and displayed before users scroll past the placement.
-[8/20/26 12:19 AM] Cherwin N: The recorded average response time of [ENTER VALUE] ms is considered [EXCELLENT / ACCEPTABLE / SLOW] for the current test environment.
+| Metric | Before change | After change | Improvement |
+|---|---:|---:|---:|
+| Average response time | `<ENTER>` | `<ENTER>` | `<ENTER>%` |
+| p95 response time | `<ENTER>` | `<ENTER>` | `<ENTER>%` |
+| Requests/second | `<ENTER>` | `<ENTER>` | `<ENTER>%` |
+| Failure rate | `<ENTER>%` | `<ENTER>%` | `<ENTER percentage points>` |
 
----
+If no tuning/retest was conducted, label this section **Recommended improvements** and do not claim measured gains.
 
-## 17. Throughput Evaluation
+## 13. Final Conclusion
 
-Throughput represents the number of requests processed by the application every second.
+Use the applicable conclusion after entering your measurements:
 
-During the load test, the application achieved approximately [ENTER VALUE] requests per second.
+> The AdStream API completed the Locust test with `<TOTAL>` requests, `<RPS>` aggregate requests per second, `<P95>` ms p95 latency and `<FAILURE RATE>%` failures. The platform `<met/did not meet>` the defined development acceptance criteria at `<USERS>` concurrent users. The health endpoint remained `<stable/unstable>`, while optimization performance was primarily influenced by `<cache/LLM/worker/dependency factor>`. The results establish a reproducible baseline, and the listed improvements should be validated through a controlled retest before production deployment.
 
-A higher throughput indicates that the system can process more traffic. However, throughput must be evaluated together with response time and failure percentage. A high request rate is not useful if the API produces many failures or takes too long to respond.
+## 14. Evidence
 
-The current throughput represents the performance of the local development configuration. A production deployment with multiple workers and larger computing resources may support a higher request rate.
+Place the final images in the repository:
 
----
+```text
+screenshots/locust-statistics.png
+screenshots/locust-charts.png
+screenshots/locust-failures.png
+```
 
-## 18. Failure Analysis
+Suggested Markdown:
 
-The number of failed requests recorded during the test was [ENTER VALUE], producing a failure percentage of [ENTER VALUE]%.
+```markdown
+![Locust statistics](../screenshots/locust-statistics.png)
+```
 
-Possible reasons for failed requests include:
+## 15. Sign-Off
 
-- FastAPI server becoming unavailable.
-- Redis connection failure.
-- Gemini API timeout.
-- Gemini API quota or permission error.
-- Invalid request payload.
-- Application exception.
-- Excessive response time.
-- Limited system CPU or memory.
-- Network connectivity problems.
-- Locust starting users too quickly.
-- A single Uvicorn worker becoming overloaded.
-
-If failures are displayed in the Locust Failures tab, their error messages should be recorded and investigated.
-
-### Failure details
-
-| Failed endpoint | Error message | Number of failures | Corrective action |
-|---|---|---:|---|
-| [ENDPOINT OR NONE] | [ERROR OR NO FAILURES] | [VALUE] | [ACTION] |
-
-If no failures occurred, enter:
-
-No failures were recorded during the test.
-
----
-
-## 19. Identified Performance Bottlenecks
-
-### 19.1 Gemini API latency
-
-The Gemini API is an external service. Its response time depends on network speed, model availability, rate limits, and API quota. Calling Gemini for every request can significantly increase the optimization endpoint's response time.
-
-### 19.2 Single Uvicorn worker
-
-The development command normally starts a limited application configuration. A single worker may become a bottleneck when many requests arrive simultaneously.
-
-### 19.3 Redis connection overhead
-
-Redis generally provides fast access, but repeated connection creation or an unavailable Redis service can delay requests. A connection pool should be used for production workloads.
-
-### 19.4 Repeated processing
-
-If cache keys are not designed correctly, similar requests may repeatedly execute the complete optimization and LLM process instead of using cached results.
-
-### 19.5 Local-machine limitations
-
-FastAPI, Redis, Locust, and other services may all run on the same computer during testing. They compete for CPU and memory, which can reduce the accuracy of the performance test.
-
-### 19.6 Development reload mode
-
-The --reload option is useful during development, but it is not recommended for production performance testing. It watches source files and adds development overhead.
-
-### 19.7 Synchronous external operations
-
-If an external API call blocks the request-processing thread, other requests may wait longer. Asynchronous processing can improve concurrency.
-
----
-
-## 20. Performance Recommendations
-
-### 20.1 Improve Redis caching
-
-Repeated optimization results should be stored in Redis with an appropriate expiration time. Proper cache keys should be generated from relevant request data.
-
-### 20.2 Reduce Gemini calls
-
-Gemini should not be called again when a suitable explanation is already cached. The application should also use a rule-based fallback if Gemini is unavailable.
-
-### 20.3 Add API timeouts
-
-A timeout should be configured for external Gemini requests. This prevents one slow external request from blocking the API for an excessive amount of time.
-
-### 20.4 Use multiple workers
-
-In production, Uvicorn can run with multiple workers:
-
-uvicorn main:app --host 0.0.0.0 --port 8000 --workers 4
-[8/20/26 12:19 AM] Cherwin N: The correct number of workers depends on the available processor cores and workload.
-
-### 20.5 Add retry and fallback logic
-
-Temporary Redis or Gemini errors should be handled safely. Retry attempts must be limited to prevent additional load.
-
-### 20.6 Use Kafka for event processing
-
-Advertisement impressions, clicks, scroll events, and viewability events can be sent to Kafka. This prevents analytical processing from delaying the main API response.
-
-### 20.7 Use ClickHouse for analytics
-
-ClickHouse can store and analyze large volumes of advertising events efficiently without overloading the operational API.
-
-### 20.8 Add production monitoring
-
-OpenTelemetry can collect application traces and metrics. Grafana dashboards can display request count, latency, error rate, Redis availability, CPU usage, and memory usage.
-
-### 20.9 Repeat testing at different traffic levels
-
-Future testing should include:
-
-- 10 concurrent users.
-- 50 concurrent users.
-- 100 concurrent users.
-- 250 concurrent users.
-- Extended-duration stability testing.
-- Sudden traffic-spike testing.
-
-### 20.10 Separate test infrastructure
-
-For more accurate results, Locust should run on a different machine from the FastAPI application. This prevents the load generator from consuming the same resources as the application being tested.
-
----
-
-## 21. Operational Readiness Assessment
-
-The system can be considered operationally ready for the tested traffic level when:
-
-- The health endpoint remains available.
-- Redis remains connected.
-- The API returns valid responses.
-- The failure percentage is close to 0%.
-- Response time remains within the acceptable limit.
-- No unhandled application exceptions occur.
-- External-service failures use a safe fallback.
-- Logs provide sufficient troubleshooting information.
-
-Based on the completed test, the system [PASSED / PARTIALLY PASSED / FAILED] the operational-readiness assessment for [ENTER USERS] concurrent users.
-
-### Suggested result statement
-
-If you received 0% failures, write:
-
-> The AdStream API successfully handled the simulated workload with no failed requests. The system remained stable throughout the test and demonstrated acceptable performance for the tested local configuration.
-
-If failures occurred, write:
-
-> The AdStream API processed most requests successfully, but some failures and increased response times were observed. Additional optimization and error-handling improvements are required before supporting the tested traffic level in production.
-
----
-
-## 22. Test Limitations
-
-The completed load test has the following limitations:
-
-- The test was conducted on a local development machine.
-- The test duration was limited.
-- Simulated users used similar request data.
-- Internet speed may have affected Gemini response time.
-- The full production architecture was not deployed.
-- Kafka and ClickHouse were not included in the request path.
-- The test did not represent traffic from multiple geographical regions.
-- Locust and the application may have shared the same computer.
-- The test did not include complete production security controls.
-- The results do not guarantee unlimited production capacity.
-
-Therefore, the recorded user count should be treated as evidence of performance under the specific test conditions rather than a permanent capacity limit.
-
----
-
-## 23. Future Testing Plan
-
-The following performance tests are recommended for future development:
-
-### Baseline test
-
-Test the API with one user to determine the normal response time without concurrency.
-
-### Load test
-
-Gradually increase the number of users and observe normal performance under expected traffic.
-
-### Stress test
-
-Continue increasing users until response time becomes unacceptable or failures begin.
-
-### Spike test
-
-Introduce a sudden increase in users to evaluate how the system handles unexpected traffic.
-
-### Endurance test
-
-Run the test for several hours to identify memory leaks, connection problems, and long-term performance degradation.
-
-### Failure-recovery test
-[8/20/26 12:19 AM] Cherwin N: Stop Redis or simulate Gemini unavailability during the test to confirm that the application handles service failures correctly.
-
----
-
-## 24. Test Evidence
-
-The following screenshots should be stored inside the project:
-
-docs/images/locust-statistics.png
-docs/images/locust-charts.png
-
-### Locust Statistics screenshot
-
-The statistics screenshot should display:
-
-- Endpoint names.
-- Request count.
-- Failure count.
-- Median response time.
-- Average response time.
-- Minimum response time.
-- Maximum response time.
-- Requests per second.
-
-Add the screenshot here after uploading it to the folder:
-
-![Locust Statistics](images/locust-statistics.png)
-
-### Locust Charts screenshot
-
-The chart screenshot should display the changes in:
-
-- Total requests per second.
-- Response time.
-- Number of active users.
-- Failure count.
-
-Add the screenshot here:
-
-![Locust Performance Charts](images/locust-charts.png)
-
----
-
-## 25. Final Conclusion
-
-The Locust load test was conducted to evaluate the performance, stability, and operational readiness of the AdStream Revenue Optimization API under concurrent traffic.
-
-The test simulated [ENTER USERS] users and processed [ENTER REQUESTS] requests. The application achieved an average throughput of [ENTER RPS] requests per second, with an average response time of [ENTER AVERAGE] milliseconds. The recorded failure percentage was [ENTER FAILURE]%.
-
-The results show that the system [SUCCESSFULLY HANDLED / PARTIALLY HANDLED / DID NOT HANDLE] the selected traffic level in the local testing environment.
-
-FastAPI provided an efficient API layer, while Redis supported faster access to repeated results. The external Gemini service may contribute additional response latency, so caching, timeouts, and fallback explanations should be maintained.
-
-The platform can be improved further by using multiple API workers, optimizing Redis connections, reducing unnecessary Gemini calls, introducing Kafka for asynchronous event processing, storing analytics in ClickHouse, and monitoring production performance through OpenTelemetry and Grafana.
-
-Overall, this load test provides measurable evidence of the current system's performance and identifies the technical improvements required for a reliable and scalable production deployment.
+| Role | Name | Status | Date |
+|---|---|---|---|
+| Prepared by | Cherwin N | `<Completed/Pending>` | 20 August 2026 |
+| Technical reviewer | `<ENTER NAME>` | `<Approved/Pending>` | `<ENTER DATE>` |
